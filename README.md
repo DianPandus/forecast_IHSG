@@ -9,7 +9,6 @@ Proyek ini bertujuan untuk mengembangkan dan membandingkan model _machine learni
 
 ![Grafik Hasil Prediksi IHSG](gambar.png)
 
-_(Catatan: Pastikan file `gambar.png` berada di dalam repositori Anda agar gambar ini dapat ditampilkan.)_
 
 ## 📜 Deskripsi Proyek
 
