@@ -1,5 +1,3 @@
-# .github/workflows/ci.yml
-
 name: CI/CD for IHSG Forecast Notebook
 
 on:
@@ -32,14 +30,14 @@ jobs:
         run: |
           jupyter nbconvert --to notebook --execute Model.ipynb
 
-      # -----------------------------------------------------------
-      # Langkah 5: (BARU) Commit dan Push Hasil Prediksi (Bagian CD)
-      # -----------------------------------------------------------
+      # Langkah 5: Commit dan Push Hasil Prediksi (Bagian CD, dengan PAT)
       - name: Commit and Push Prediction File
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
           git add prediksi_terbaru_rf.csv
           # Hanya commit dan push jika ada perubahan pada file prediksi
           git diff --staged --quiet || git commit -m "Update hasil prediksi terbaru"
-          git push
+          git push https://DianPandus:${GH_PAT}@github.com/DianPandus/forecast_IHSG.git HEAD:main
