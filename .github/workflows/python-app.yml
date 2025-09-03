@@ -3,8 +3,13 @@ name: CI/CD for IHSG Forecast Notebook
 on:
   workflow_dispatch:
 
+# Wajib agar GITHUB_TOKEN boleh push
 permissions:
-  contents: write  # penting supaya GITHUB_TOKEN boleh push
+  contents: write
+
+concurrency:
+  group: ci-notebook
+  cancel-in-progress: false
 
 jobs:
   run-and-deploy:
@@ -12,7 +17,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4  # default pakai GITHUB_TOKEN
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -20,15 +25,26 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # pastikan jupyter ada (kalau belum di requirements)
+          python -c "import jupyter" || pip install jupyter
 
       - name: Execute Notebook
-        run: jupyter nbconvert --to notebook --execute --inplace Model.ipynb
+        run: |
+          jupyter nbconvert --to notebook --execute --inplace Model.ipynb
 
       - name: Commit and Push Prediction File
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # tambahkan file keluaran (sesuaikan kalau nama/letak filenya beda)
           git add prediksi_terbaru_rf.csv
+
+          # commit hanya jika ada perubahan
           git diff --staged --quiet || git commit -m "Update hasil prediksi terbaru"
-          git push
+
+          # push pakai GITHUB_TOKEN dari checkout
+          git push origin HEAD:main
