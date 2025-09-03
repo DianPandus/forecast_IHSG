@@ -30,6 +30,18 @@ jobs:
         run: |
           jupyter nbconvert --to notebook --execute Model.ipynb
 
+      # Langkah debug token, letakkan di sini!
+      - name: Debug GH_PAT
+        run: |
+          if [ -z "${GH_PAT}" ]; then
+            echo "GH_PAT is empty!"
+            exit 1
+          else
+            echo "GH_PAT is set and length: ${#GH_PAT}"
+          fi
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
       # Langkah 5: Commit dan Push Hasil Prediksi (Bagian CD, dengan PAT)
       - name: Commit and Push Prediction File
         env:
@@ -38,6 +50,5 @@ jobs:
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
           git add prediksi_terbaru_rf.csv
-          # Hanya commit dan push jika ada perubahan pada file prediksi
           git diff --staged --quiet || git commit -m "Update hasil prediksi terbaru"
           git push https://DianPandus:${GH_PAT}@github.com/DianPandus/forecast_IHSG.git HEAD:main
