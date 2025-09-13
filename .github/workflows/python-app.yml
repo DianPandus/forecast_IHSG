@@ -1,6 +1,4 @@
-# .github/workflows/ci.yml
-
-name: Dockerized CI/CD for IHSG Notebook
+name: CI/CD for IHSG Forecast Notebook
 
 on:
   workflow_dispatch:
@@ -9,34 +7,70 @@ permissions:
   contents: write
 
 concurrency:
-  group: ci-docker-notebook
-  cancel-in-progress: false
+  group: ci-notebook
+  cancel-in-progress: true  # penting biar ga tabrakan push
 
 jobs:
-  build-run-and-deploy:
+  run-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repo (full history)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0           # perlu untuk rebase
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Docker image
-        run: docker build -t ihsg-forecast-app .
-
-      - name: Run Docker container to generate prediction
+      - name: Configure Git
         run: |
-          # Perintah ini menjalankan container.
-          # Opsi --mount akan "menyambungkan" folder kerja runner ke folder /app di dalam container.
-          # Jadi, saat container membuat file prediksi_terbaru_rf.csv, file itu akan langsung muncul di runner.
-          docker run --mount type=bind,source=$(pwd),target=/app ihsg-forecast-app
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global pull.rebase true
+          git config --global init.defaultBranch main
+          git config --global safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Pull latest changes
-        run: git pull origin main
-      
-      - name: Commit and push changes
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
         run: |
-          git config --local user.name "github-actions[bot]"
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Update hasil prediksi terbaru"
-          git push origin main
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -c "import jupyter" || pip install jupyter
+
+      - name: Execute Notebook
+        run: |
+          jupyter nbconvert --to notebook --execute --inplace Model.ipynb
+
+      - name: Stage outputs
+        run: |
+          # tambahkan file keluaran sesuai kebutuhanmu
+          git add prediksi_terbaru_rf.csv Model.ipynb || true
+
+      - name: Commit if changes exist
+        run: |
+          if ! git diff --staged --quiet; then
+            git commit -m "Update hasil prediksi terbaru"
+          else
+            echo "Tidak ada perubahan; skip commit."
+          fi
+
+      - name: Rebase onto latest main
+        run: |
+          # Ambil remote terbaru, lalu rebase supaya fast-forward aman
+          git fetch origin main
+          # Jika belum ada commit baru (no-op), ini tetap aman
+          git rebase origin/main || (echo "Rebase gagal, mencoba strategi merge" && git rebase --abort && git pull --no-rebase --ff-only origin main)
+
+      - name: Push to main (with retry)
+        run: |
+          set -e
+          # Coba push; kalau ketahan karena balapan, fetch+rebase+retry sekali lagi
+          (git push origin HEAD:main) || (
+            echo "Push ditolak, mencoba fetch+rebase ulang lalu push..."
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+          )
