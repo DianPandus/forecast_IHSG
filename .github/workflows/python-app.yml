@@ -1,75 +1,82 @@
-name: CI/CD for IHSG Forecast Notebook
+name: IHSG Forecast - Docker CI
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "Model.ipynb"
+      - "Model.py"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".github/workflows/**"
+  # Jalan otomatis tiap 08:00 WIB (01:00 UTC)
+  schedule:
+    - cron: "0 1 * * *"
 
 permissions:
   contents: write
 
 concurrency:
   group: ci-notebook
-  cancel-in-progress: true  # penting biar ga tabrakan push
+  cancel-in-progress: true
 
 jobs:
-  run-and-deploy:
+  build-run-commit:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo (full history)
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0           # perlu untuk rebase
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-      - name: Configure Git
+      - name: Configure Git identity
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global pull.rebase true
-          git config --global init.defaultBranch main
           git config --global safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
+      - name: Build Docker image
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          python -c "import jupyter" || pip install jupyter
+          # Jika Dockerfile bukan di root, ganti ke: docker build -t ihsg-forecast:latest -f path/ke/Dockerfile .
+          docker build -t ihsg-forecast:latest .
 
-      - name: Execute Notebook
+      - name: Execute notebook inside container
         run: |
-          jupyter nbconvert --to notebook --execute --inplace Model.ipynb
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE":/app \
+            -w /app \
+            -e CUDA_VISIBLE_DEVICES= \
+            -e TF_CPP_MIN_LOG_LEVEL=2 \
+            -e TF_ENABLE_ONEDNN_OPTS=0 \
+            ihsg-forecast:latest \
+            jupyter nbconvert --to notebook --execute --inplace Model.ipynb
 
       - name: Stage outputs
         run: |
-          # tambahkan file keluaran sesuai kebutuhanmu
-          git add prediksi_terbaru_rf.csv Model.ipynb || true
+          # Tambah file output spesifik biar rapih; gunakan -A kalau perlu semuanya
+          git add Model.ipynb || true
+          if [ -f prediksi_terbaru_rf.csv ]; then git add prediksi_terbaru_rf.csv; fi
 
       - name: Commit if changes exist
         run: |
           if ! git diff --staged --quiet; then
             git commit -m "Update hasil prediksi terbaru"
           else
-            echo "Tidak ada perubahan; skip commit."
+            echo "No changes to commit."
           fi
 
       - name: Rebase onto latest main
         run: |
-          # Ambil remote terbaru, lalu rebase supaya fast-forward aman
           git fetch origin main
-          # Jika belum ada commit baru (no-op), ini tetap aman
-          git rebase origin/main || (echo "Rebase gagal, mencoba strategi merge" && git rebase --abort && git pull --no-rebase --ff-only origin main)
+          git rebase origin/main || (echo "Rebase gagal; coba FF-only" && git rebase --abort && git pull --no-rebase --ff-only origin main)
 
       - name: Push to main (with retry)
         run: |
-          set -e
-          # Coba push; kalau ketahan karena balapan, fetch+rebase+retry sekali lagi
           (git push origin HEAD:main) || (
-            echo "Push ditolak, mencoba fetch+rebase ulang lalu push..."
+            echo "Push ditolak; fetch+rebase ulang lalu push..."
             git fetch origin main
             git rebase origin/main
             git push origin HEAD:main
