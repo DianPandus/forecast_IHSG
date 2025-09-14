@@ -11,27 +11,31 @@ on:
       - "Dockerfile"
       - ".github/workflows/**"
   schedule:
-    - cron: "0 1 * * *" # 08:00 WIB
+    - cron: "0 1 * * *" # 08:00 WIB (UTC+7)
 
 permissions:
   contents: write
-  packages: write # << perlu untuk push ke GHCR
+  packages: write
 
 concurrency:
   group: ci-notebook
   cancel-in-progress: true
 
-env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ihsg-forecast
-
 jobs:
   build-run-commit-and-publish:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo (full history)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set IMAGE_NAME (lowercase for GHCR)
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          OWNER_LC="${OWNER,,}"  # lowercase-kan
+          echo "IMAGE_NAME=ghcr.io/${OWNER_LC}/ihsg-forecast" >> $GITHUB_ENV
 
       - name: Configure Git identity
         run: |
@@ -96,19 +100,19 @@ jobs:
           DATE_TAG=$(date -u +'%Y%m%d%H%M')
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "DATE_TAG=$DATE_TAG"   >> $GITHUB_OUTPUT
-          docker tag ihsg-forecast:latest $IMAGE_NAME:latest
-          docker tag ihsg-forecast:latest $IMAGE_NAME:sha-${SHORT_SHA}
-          docker tag ihsg-forecast:latest $IMAGE_NAME:date-${DATE_TAG}
+          docker tag ihsg-forecast:latest "$IMAGE_NAME:latest"
+          docker tag ihsg-forecast:latest "$IMAGE_NAME:sha-${SHORT_SHA}"
+          docker tag ihsg-forecast:latest "$IMAGE_NAME:date-${DATE_TAG}"
 
       - name: Push images (latest + sha + date)
         run: |
-          docker push $IMAGE_NAME:latest
-          docker push $IMAGE_NAME:sha-${{ steps.tagger.outputs.SHORT_SHA }}
-          docker push $IMAGE_NAME:date-${{ steps.tagger.outputs.DATE_TAG }}
+          docker push "$IMAGE_NAME:latest"
+          docker push "$IMAGE_NAME:sha-${{ steps.tagger.outputs.SHORT_SHA }}"
+          docker push "$IMAGE_NAME:date-${{ steps.tagger.outputs.DATE_TAG }}"
 
       - name: Push version tag on git tag (optional)
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
-          docker tag ihsg-forecast:latest $IMAGE_NAME:${VERSION}
-          docker push $IMAGE_NAME:${VERSION}
+          docker tag ihsg-forecast:latest "$IMAGE_NAME:${VERSION}"
+          docker push "$IMAGE_NAME:${VERSION}"
